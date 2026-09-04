@@ -69,7 +69,8 @@ def main():
     # دروستکردنی فایلی M3U
     with open("istar_playlist.m3u", "w", encoding="utf-8") as f:
         f.write("#EXTM3U\n")
-        
+        print("Server Response:", channels)
+
         for i, channel in enumerate(channels, 1):
             name = channel.get("name", f"Channel {i}")
             icon = channel.get("icon", "")
