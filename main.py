@@ -52,26 +52,47 @@ def main():
     login_res = requests.get(LOGIN_URL, headers=headers, verify=False).json()
     session = login_res.get("payload", {}).get("session")
     
+    if not session:
+        print("Login failed! Could not get session.")
+        return
+
     enc_download_v2 = login_res["payload"]["channels"][0]["download-v2"]
     category_url = decrypt_static(enc_download_v2)
     
+    # گۆڕانکارییەکان بۆ فێڵکردن لە سێرڤەرەکە
     cat_headers = {
         "session": str(session),
         "mc": generate_mc_token(),
-        "User-Agent": "Dart/3.5 (dart:io)"
+        "user-agent": "Dart/3.5 (dart:io)",
+        "x-device-model": "samsung | a71naxx",
+        "x-device-id": DEVICE_ID,
+        "x-app-package-name": "com.istargroups.istarmedialive",
+        "x-app-version": "2.0.20",
+        "x-app-platform": "android",
+        "X-Forwarded-For": "37.236.14.15"  # ئایپییەکی ساختەی عێراقی
     }
     
     print("[2] Fetching all channels...")
-    channels = requests.get(category_url, headers=cat_headers, verify=False).json()
+    channels_response = requests.get(category_url, headers=cat_headers, verify=False).json()
+    
+    # پشکنین بۆ ئەوەی بزانین سێرڤەرەکە بلۆکی کردووین یان نا
+    if isinstance(channels_response, dict) and "message" in channels_response:
+        print("Server Response:", channels_response)
+        print("Error: Server still blocking the request.")
+        return
+        
+    channels = channels_response
     total_channels = len(channels)
     print(f"[+] Found {total_channels} channels. Starting extraction...\n")
     
     # دروستکردنی فایلی M3U
     with open("istar_playlist.m3u", "w", encoding="utf-8") as f:
         f.write("#EXTM3U\n")
-        print("Server Response:", channels)
 
         for i, channel in enumerate(channels, 1):
+            if not isinstance(channel, dict):
+                continue
+                
             name = channel.get("name", f"Channel {i}")
             icon = channel.get("icon", "")
             prefix = channel.get("prefix")
@@ -89,28 +110,14 @@ def main():
                     balancer_url = f"{channel_url}?{decrypted_content}"
                 else:
                     balancer_url = f"{channel_url}?content={decrypted_content}"
-                
-                # وەرگرتنی لینکی کۆتایی لە باڵانسەر
-                bal_res = requests.get(balancer_url, headers=cat_headers, allow_redirects=False, verify=False)
-                m3u8_link = bal_res.headers.get("Location")
-                
-                if m3u8_link:
-                    print(f"[{i}/{total_channels}] ✔️ {name}")
-                    # نووسینی ناو و لۆگۆ و لینکەکە لەناو فایلەکەدا
-                    f.write(f'#EXTINF:-1 tvg-logo="{icon}",{name}\n')
-                    f.write(f"{m3u8_link}\n")
-                else:
-                    print(f"[{i}/{total_channels}] ❌ Failed: {name}")
-                
-                # پشوویەکی زۆر بچووک بۆ ئەوەی سێرڤەرەکە بلۆکمان نەکات
-                time.sleep(0.1)
-                
+                    
+                f.write(f'#EXTINF:-1 tvg-logo="{icon}",{name}\n')
+                f.write(f"{balancer_url}\n")
             except Exception as e:
-                print(f"[{i}/{total_channels}] ⚠️ Error on {name}: {e}")
+                print(f"Error decrypting channel {name}: {e}")
+                continue
                 
-    print("\n" + "="*50)
-    print("🎉 SUCCESS! All channels saved to 'istar_playlist.m3u'")
-    print("="*50)
+    print("[3] Successfully generated istar_playlist.m3u")
 
 if __name__ == "__main__":
     main()
