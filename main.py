@@ -59,7 +59,6 @@ def main():
     enc_download_v2 = login_res["payload"]["channels"][0]["download-v2"]
     category_url = decrypt_static(enc_download_v2)
     
-    # گۆڕانکارییەکان بۆ فێڵکردن لە سێرڤەرەکە
     cat_headers = {
         "session": str(session),
         "mc": generate_mc_token(),
@@ -69,13 +68,12 @@ def main():
         "x-app-package-name": "com.istargroups.istarmedialive",
         "x-app-version": "2.0.20",
         "x-app-platform": "android",
-        "X-Forwarded-For": "37.236.14.15"  # ئایپییەکی ساختەی عێراقی
+        "X-Forwarded-For": "37.236.14.15"
     }
     
     print("[2] Fetching all channels...")
     channels_response = requests.get(category_url, headers=cat_headers, verify=False).json()
     
-    # پشکنین بۆ ئەوەی بزانین سێرڤەرەکە بلۆکی کردووین یان نا
     if isinstance(channels_response, dict) and "message" in channels_response:
         print("Server Response:", channels_response)
         print("Error: Server still blocking the request.")
@@ -85,9 +83,12 @@ def main():
     total_channels = len(channels)
     print(f"[+] Found {total_channels} channels. Starting extraction...\n")
     
-    # دروستکردنی فایلی M3U
     with open("istar_playlist.m3u", "w", encoding="utf-8") as f:
         f.write("#EXTM3U\n")
+        
+        # ئەم دوو دێڕە وا دەکات هەمیشە کاتی نوێ بخرێتە ناو فایلەکەوە
+        current_time = time.strftime("%Y-%m-%d %H:%M:%S")
+        f.write(f"# Last Updated: {current_time}\n")
 
         for i, channel in enumerate(channels, 1):
             if not isinstance(channel, dict):
