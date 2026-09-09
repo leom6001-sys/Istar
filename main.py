@@ -4,7 +4,6 @@ import time
 import hashlib
 import urllib3
 import json
-import random
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
 
@@ -36,28 +35,23 @@ def decrypt_dynamic(encrypted_b64, session):
     cipher = AES.new(key, AES.MODE_CBC, iv)
     return unpad(cipher.decrypt(enc_data), AES.block_size).decode('utf-8')
 
-def get_random_ip():
-    return f"{random.randint(37, 185)}.{random.randint(0, 255)}.{random.randint(0, 255)}.{random.randint(0, 255)}"
-
 def main():
+    headers = {
+        "user-agent": "Dart/3.5 (dart:io)",
+        "x-device-model": "samsung | a71naxx",
+        "accept-encoding": "gzip",
+        "host": "live.istariq.com",
+        "x-device-id": DEVICE_ID,
+        "x-app-package-name": "com.istargroups.istarmedialive",
+        "x-app-version": "2.0.20",
+        "x-app-platform": "android",
+        "x-language": "fa"
+    }
+    
     max_attempts = 5
     
     for attempt in range(1, max_attempts + 1):
-        fake_ip = get_random_ip()
-        print(f"\n[!] Attempt {attempt} of {max_attempts} using IP: {fake_ip}")
-        
-        headers = {
-            "user-agent": "Dart/3.5 (dart:io)",
-            "x-device-model": "samsung | a71naxx",
-            "accept-encoding": "gzip",
-            "host": "live.istariq.com",
-            "x-device-id": DEVICE_ID,
-            "x-app-package-name": "com.istargroups.istarmedialive",
-            "x-app-version": "2.0.20",
-            "x-app-platform": "android",
-            "x-language": "fa",
-            "X-Forwarded-For": fake_ip
-        }
+        print(f"\n[!] Attempt {attempt} of {max_attempts}...")
         
         try:
             print("[1] Logging in...")
@@ -65,34 +59,46 @@ def main():
             session = login_res.get("payload", {}).get("session")
             
             if not session:
-                print("[-] Login failed. Retrying in 5 seconds...")
+                print("Login failed! Could not get session. Retrying...")
                 time.sleep(5)
                 continue
-                
+
             enc_download_v2 = login_res["payload"]["channels"][0]["download-v2"]
             category_url = decrypt_static(enc_download_v2)
             
-            cat_headers = headers.copy()
-            cat_headers["session"] = str(session)
-            cat_headers["mc"] = generate_mc_token()
+            cat_headers = {
+                "session": str(session),
+                "mc": generate_mc_token(),
+                "user-agent": "Dart/3.5 (dart:io)",
+                "x-device-model": "samsung | a71naxx",
+                "x-device-id": DEVICE_ID,
+                "x-app-package-name": "com.istargroups.istarmedialive",
+                "x-app-version": "2.0.20",
+                "x-app-platform": "android",
+                "X-Forwarded-For": "37.236.14.15"
+            }
             
-            print("[2] Fetching channels...")
+            print("[2] Fetching all channels...")
             channels_response = requests.get(category_url, headers=cat_headers, verify=False, timeout=15).json()
             
             if isinstance(channels_response, dict) and "message" in channels_response:
-                print("[-] Server blocked request. Retrying in 5 seconds...")
+                print("Server Response:", channels_response)
+                print("Error: Server still blocking the request. Retrying...")
                 time.sleep(5)
                 continue
                 
-            total_channels = len(channels_response)
-            print(f"[+] Found {total_channels} channels. Starting extraction...")
+            channels = channels_response
+            total_channels = len(channels)
+            print(f"[+] Found {total_channels} channels. Starting extraction...\n")
             
             with open("istar_playlist.m3u", "w", encoding="utf-8") as f:
                 f.write("#EXTM3U\n")
+                
+                # ئەم دوو دێڕە وا دەکات هەمیشە کاتی نوێ بخرێتە ناو فایلەکەوە
                 current_time = time.strftime("%Y-%m-%d %H:%M:%S")
                 f.write(f"# Last Updated: {current_time}\n")
 
-                for i, channel in enumerate(channels_response, 1):
+                for i, channel in enumerate(channels, 1):
                     if not isinstance(channel, dict):
                         continue
                         
@@ -106,23 +112,25 @@ def main():
                         
                     try:
                         decrypted_content = decrypt_dynamic(prefix, session)
+                        
                         if decrypted_content.startswith("?"):
                             balancer_url = f"{channel_url}{decrypted_content}"
                         elif decrypted_content.startswith("content="):
                             balancer_url = f"{channel_url}?{decrypted_content}"
                         else:
                             balancer_url = f"{channel_url}?content={decrypted_content}"
-                        
+                            
                         f.write(f'#EXTINF:-1 tvg-logo="{icon}",{name}\n')
                         f.write(f"{balancer_url}\n")
-                    except Exception:
+                    except Exception as e:
+                        print(f"Error decrypting channel {name}: {e}")
                         continue
                         
             print("[3] Successfully generated istar_playlist.m3u")
-            return
+            return # کۆتایی پێهێنان و دەرچوون لە تاقیکردنەوەکان ئەگەر سەرکەوتوو بوو
             
         except Exception as e:
-            print(f"[-] Request error: {e}")
+            print(f"Network error or timeout: {e}. Retrying...")
             time.sleep(5)
             
     print("\n[x] All 5 attempts failed.")
