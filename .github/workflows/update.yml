@@ -22,15 +22,18 @@ jobs:
         run: |
           pip install requests pycryptodome urllib3
 
-      - name: Delete old M3U and Run Script
+      - name: Run Script
         run: |
-          rm -f istar_playlist.m3u
           python main.py
 
       - name: Commit and Push changes
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add istar_playlist.m3u
-          git commit -m "Auto-update playlist files" || echo "No changes to commit"
-          git push
+          if [ -f istar_playlist.m3u ]; then
+            git add istar_playlist.m3u
+            git commit -m "Auto-update playlist files" || echo "No changes to commit"
+            git push
+          else
+            echo "Skipping commit, file not found due to server block."
+          fi
