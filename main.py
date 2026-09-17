@@ -16,6 +16,9 @@ LOGIN_URL = f"https://live.istariq.com/live/v2/login?mc={DEVICE_ID}&package={PAC
 STATIC_KEY = b"T209iFeRrK2ySdk8"
 STATIC_IV = b"ab0FogjEh6s9s5Wx"
 
+# کلیلە نهێنییەکەی خۆت بۆ پاراستنی فایلەکە لە Reqable
+MYSTAR_SECRET_KEY = "mystar2month9898"
+
 def generate_mc_token():
     time_window = round(time.time() / 300) * 300
     secret = "c0cwHnAYTBxdXLki5xbxKzv2ojsiZG0K"
@@ -34,6 +37,17 @@ def decrypt_dynamic(encrypted_b64, session):
     enc_data = base64.b64decode(encrypted_b64)
     cipher = AES.new(key, AES.MODE_CBC, iv)
     return unpad(cipher.decrypt(enc_data), AES.block_size).decode('utf-8')
+
+# فەنکشنی ئاڵۆزکردن (XOR) بۆ پاراستنی ماک ئەدرێس و لینکەکان
+def xor_encrypt(data_bytes, key_string):
+    key_bytes = key_string.encode('utf-8')
+    key_length = len(key_bytes)
+    encrypted_bytes = bytearray()
+    
+    for i in range(len(data_bytes)):
+        encrypted_bytes.append(data_bytes[i] ^ key_bytes[i % key_length])
+        
+    return encrypted_bytes
 
 def main():
     headers = {
@@ -89,45 +103,52 @@ def main():
                 
             channels = channels_response
             total_channels = len(channels)
-            print(f"[+] Found {total_channels} channels. Starting extraction...\n")
+            print(f"[+] Found {total_channels} channels. Starting extraction and encryption...\n")
             
-            with open("istar_playlist.m3u", "w", encoding="utf-8") as f:
-                f.write("#EXTM3U\n")
-                
-                # ئەم دوو دێڕە وا دەکات هەمیشە کاتی نوێ بخرێتە ناو فایلەکەوە
-                current_time = time.strftime("%Y-%m-%d %H:%M:%S")
-                f.write(f"# Last Updated: {current_time}\n")
+            # دروستکردنی فایلەکە لەناو مێشکی پایتۆن (بەبێ سەیڤکردن وەک تێکست)
+            m3u_content = "#EXTM3U\n"
+            current_time = time.strftime("%Y-%m-%d %H:%M:%S")
+            m3u_content += f"# Last Updated: {current_time}\n"
 
-                for i, channel in enumerate(channels, 1):
-                    if not isinstance(channel, dict):
-                        continue
-                        
-                    name = channel.get("name", f"Channel {i}")
-                    icon = channel.get("icon", "")
-                    prefix = channel.get("prefix")
-                    channel_url = channel.get("channel_url")
+            for i, channel in enumerate(channels, 1):
+                if not isinstance(channel, dict):
+                    continue
                     
-                    if not prefix or not channel_url:
-                        continue
+                name = channel.get("name", f"Channel {i}")
+                icon = channel.get("icon", "")
+                prefix = channel.get("prefix")
+                channel_url = channel.get("channel_url")
+                
+                if not prefix or not channel_url:
+                    continue
+                    
+                try:
+                    decrypted_content = decrypt_dynamic(prefix, session)
+                    
+                    if decrypted_content.startswith("?"):
+                        balancer_url = f"{channel_url}{decrypted_content}"
+                    elif decrypted_content.startswith("content="):
+                        balancer_url = f"{channel_url}?{decrypted_content}"
+                    else:
+                        balancer_url = f"{channel_url}?content={decrypted_content}"
                         
-                    try:
-                        decrypted_content = decrypt_dynamic(prefix, session)
-                        
-                        if decrypted_content.startswith("?"):
-                            balancer_url = f"{channel_url}{decrypted_content}"
-                        elif decrypted_content.startswith("content="):
-                            balancer_url = f"{channel_url}?{decrypted_content}"
-                        else:
-                            balancer_url = f"{channel_url}?content={decrypted_content}"
-                            
-                        f.write(f'#EXTINF:-1 tvg-logo="{icon}",{name}\n')
-                        f.write(f"{balancer_url}\n")
-                    except Exception as e:
-                        print(f"Error decrypting channel {name}: {e}")
-                        continue
-                        
-            print("[3] Successfully generated istar_playlist.m3u")
-            return # کۆتایی پێهێنان و دەرچوون لە تاقیکردنەوەکان ئەگەر سەرکەوتوو بوو
+                    m3u_content += f'#EXTINF:-1 tvg-logo="{icon}",{name}\n'
+                    m3u_content += f"{balancer_url}\n"
+                except Exception as e:
+                    print(f"Error decrypting channel {name}: {e}")
+                    continue
+            
+            print("[3] Encrypting playlist with XOR...")
+            # ئاڵۆزکردنی تەواوی لیستەکە
+            encrypted_data = xor_encrypt(m3u_content.encode('utf-8'), MYSTAR_SECRET_KEY)
+            
+            print("[4] Saving encrypted file...")
+            # سەیڤکردنی فایلە ئاڵۆزەکە بە ناوی نوێ
+            with open("mystar_playlist.enc", "wb") as f:
+                f.write(encrypted_data)
+                    
+            print("\n[+] Successfully generated and encrypted 'mystar_playlist.enc'")
+            return 
             
         except Exception as e:
             print(f"Network error or timeout: {e}. Retrying...")
