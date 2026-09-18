@@ -16,7 +16,6 @@ LOGIN_URL = f"https://live.istariq.com/live/v2/login?mc={DEVICE_ID}&package={PAC
 STATIC_KEY = b"T209iFeRrK2ySdk8"
 STATIC_IV = b"ab0FogjEh6s9s5Wx"
 
-# کلیلە نهێنییەکەی خۆت بۆ پاراستنی فایلەکە لە Reqable
 MYSTAR_SECRET_KEY = "mystar2month9898"
 
 def generate_mc_token():
@@ -38,16 +37,16 @@ def decrypt_dynamic(encrypted_b64, session):
     cipher = AES.new(key, AES.MODE_CBC, iv)
     return unpad(cipher.decrypt(enc_data), AES.block_size).decode('utf-8')
 
-# فەنکشنی ئاڵۆزکردن (XOR) بۆ پاراستنی ماک ئەدرێس و لینکەکان
-def xor_encrypt(data_bytes, key_string):
+# XOR لەسەر تێکست و پاشان Base64 بۆ پاراستنی سەد لە سەدی
+def text_xor_encrypt(text, key_string):
+    text_bytes = text.encode('utf-8')
     key_bytes = key_string.encode('utf-8')
-    key_length = len(key_bytes)
     encrypted_bytes = bytearray()
     
-    for i in range(len(data_bytes)):
-        encrypted_bytes.append(data_bytes[i] ^ key_bytes[i % key_length])
+    for i in range(len(text_bytes)):
+        encrypted_bytes.append(text_bytes[i] ^ key_bytes[i % len(key_bytes)])
         
-    return encrypted_bytes
+    return base64.b64encode(encrypted_bytes).decode('utf-8')
 
 def main():
     headers = {
@@ -65,15 +64,11 @@ def main():
     max_attempts = 5
     
     for attempt in range(1, max_attempts + 1):
-        print(f"\n[!] Attempt {attempt} of {max_attempts}...")
-        
         try:
-            print("[1] Logging in...")
             login_res = requests.get(LOGIN_URL, headers=headers, verify=False, timeout=15).json()
             session = login_res.get("payload", {}).get("session")
             
             if not session:
-                print("Login failed! Could not get session. Retrying...")
                 time.sleep(5)
                 continue
 
@@ -92,20 +87,13 @@ def main():
                 "X-Forwarded-For": "37.236.14.15"
             }
             
-            print("[2] Fetching all channels...")
             channels_response = requests.get(category_url, headers=cat_headers, verify=False, timeout=15).json()
             
             if isinstance(channels_response, dict) and "message" in channels_response:
-                print("Server Response:", channels_response)
-                print("Error: Server still blocking the request. Retrying...")
                 time.sleep(5)
                 continue
                 
             channels = channels_response
-            total_channels = len(channels)
-            print(f"[+] Found {total_channels} channels. Starting extraction and encryption...\n")
-            
-            # دروستکردنی فایلەکە لەناو مێشکی پایتۆن (بەبێ سەیڤکردن وەک تێکست)
             m3u_content = "#EXTM3U\n"
             current_time = time.strftime("%Y-%m-%d %H:%M:%S")
             m3u_content += f"# Last Updated: {current_time}\n"
@@ -124,7 +112,6 @@ def main():
                     
                 try:
                     decrypted_content = decrypt_dynamic(prefix, session)
-                    
                     if decrypted_content.startswith("?"):
                         balancer_url = f"{channel_url}{decrypted_content}"
                     elif decrypted_content.startswith("content="):
@@ -135,26 +122,18 @@ def main():
                     m3u_content += f'#EXTINF:-1 tvg-logo="{icon}",{name}\n'
                     m3u_content += f"{balancer_url}\n"
                 except Exception as e:
-                    print(f"Error decrypting channel {name}: {e}")
                     continue
             
-            print("[3] Encrypting playlist with XOR...")
-            # ئاڵۆزکردنی تەواوی لیستەکە
-            encrypted_data = xor_encrypt(m3u_content.encode('utf-8'), MYSTAR_SECRET_KEY)
+            # ئاڵۆزکردن بە Text XOR و Base64
+            encrypted_text = text_xor_encrypt(m3u_content, MYSTAR_SECRET_KEY)
             
-            print("[4] Saving encrypted file...")
-            # سەیڤکردنی فایلە ئاڵۆزەکە بە ناوی نوێ
-            with open("mystar_playlist.enc", "wb") as f:
-                f.write(encrypted_data)
+            with open("mystar_playlist.enc", "w", encoding="utf-8") as f:
+                f.write(encrypted_text)
                     
-            print("\n[+] Successfully generated and encrypted 'mystar_playlist.enc'")
             return 
             
         except Exception as e:
-            print(f"Network error or timeout: {e}. Retrying...")
             time.sleep(5)
-            
-    print("\n[x] All 5 attempts failed.")
 
 if __name__ == "__main__":
     main()
